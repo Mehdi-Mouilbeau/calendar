@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendrier Partagé</title>
+<style>
+:root {
+    --bg: #f1f5f9; --card: #fff; --border: #e2e8f0;
+    --text: #1e293b; --muted: #64748b;
+    --accent: #6366f1; --accent-dark: #4f46e5;
+    --radius: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,.15);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 14px; }
+
+/* Header */
+header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; box-shadow: var(--shadow); }
+.logo { font-size: 1.1rem; font-weight: 700; color: var(--accent); }
+
+/* Buttons */
+.btn { padding: 7px 14px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: background .15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); }
+.btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+
+/* Layout */
+.main { max-width: 1080px; margin: 24px auto; padding: 0 16px; display: grid; grid-template-columns: 1fr 260px; gap: 20px; align-items: start; }
+@media (max-width: 720px) { .main { grid-template-columns: 1fr; } }
+
+/* Cards */
+.card { background: var(--card); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 16px; }
+.card:last-child { margin-bottom: 0; }
+.card-title { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin-bottom: 12px; }
+
+/* Calendar card */
+.calendar-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.calendar-nav { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); }
+.calendar-nav h2 { font-size: 1rem; font-weight: 600; text-transform: capitalize; }
+.nav-btn { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg); font-size: 1.1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+.nav-btn:hover { background: var(--border); }
+
+/* Day headers */
+.day-headers { display: grid; grid-template-columns: repeat(7, 1fr); padding: 10px 16px 4px; }
+.day-header { text-align: center; font-size: 0.7rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 4px 0; }
+
+/* Calendar grid */
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); padding: 4px 16px 16px; gap: 3px; }
+.day-cell { border-radius: 8px; min-height: 58px; padding: 4px 2px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: background .12s; position: relative; }
+.day-cell:not(.empty):hover { background: var(--bg); }
+.day-cell.empty { cursor: default; }
+.day-cell.common-free { background: #dcfce7; }
+.day-cell.common-free:hover { background: #bbf7d0; }
+.day-number { font-size: 0.82rem; font-weight: 500; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 50%; flex-shrink: 0; }
+.day-cell.today .day-number { background: var(--accent); color: #fff; font-weight: 700; }
+.day-cell.past .day-number { color: #cbd5e1; }
+
+/* Dots */
+.dots-row { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; width: 100%; }
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot.free { background: transparent !important; border: 2px solid; }
+
+/* Legend */
+.legend { display: flex; gap: 16px; padding: 10px 4px 2px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--muted); }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.legend-dot.free { background: transparent; border: 2px solid var(--muted); }
+
+/* Sidebar */
+.sidebar { display: flex; flex-direction: column; }
+
+/* Profile form */
+.form-group { margin-bottom: 12px; }
+.form-group:last-child { margin-bottom: 0; }
+.form-group label { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 5px; color: var(--muted); }
+.form-group input { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.85rem; background: var(--bg); color: var(--text); transition: border-color .15s, box-shadow .15s; }
+.form-group input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,.12); }
+
+/* Color grid */
+.color-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.color-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: transform .12s, border-color .12s; }
+.color-swatch:hover { transform: scale(1.2); }
+.color-swatch.selected { border-color: var(--text); }
+
+/* Participants */
+.participant { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-radius: 6px; }
+.participant:hover { background: var(--bg); }
+.participant-color { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.participant-name { flex: 1; font-size: 0.85rem; font-weight: 500; }
+.participant-count { font-size: 0.75rem; color: var(--muted); }
+.no-participants { font-size: 0.82rem; color: var(--muted); }
+
+/* Day popup */
+.day-popup { position: fixed; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; box-shadow: var(--shadow-md); z-index: 100; min-width: 155px; }
+.popup-title { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 2px 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.popup-btn { display: block; width: 100%; padding: 7px 10px; border: none; background: none; text-align: left; border-radius: 6px; cursor: pointer; font-size: 0.85rem; transition: background .1s; }
+.popup-btn:hover { background: var(--bg); }
+.popup-btn.danger { color: #ef4444; }
+
+/* Error banner */
+.error-banner { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius); padding: 10px 16px; font-size: 0.85rem; color: #dc2626; display: flex; align-items: center; gap: 10px; z-index: 200; box-shadow: var(--shadow-md); max-width: 480px; width: calc(100% - 32px); }
+.error-close { background: none; border: none; cursor: pointer; color: #dc2626; font-size: 1.1rem; padding: 0; line-height: 1; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; color: #fff; padding: 10px 18px; border-radius: var(--radius); font-size: 0.85rem; box-shadow: var(--shadow-md); z-index: 300; animation: slideUp .25s ease; }
+@keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Loading overlay */
+.loading-overlay { position: fixed; inset: 0; background: rgba(241,245,249,.9); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 400; font-size: 0.9rem; color: var(--muted); }
+.spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Common days button */
+.common-days-btn { width: 100%; padding: 8px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: background .15s; margin-top: 8px; }
+.common-days-btn:hover { background: var(--border); }
+.common-days-btn.active { background: #dcfce7; border-color: #86efac; color: #15803d; }
+.hint { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
+
+/* Refresh indicator */
+.refresh-dot { width: 7px; height: 7px; border-radius: 50%; background: #22c55e; display: inline-block; margin-left: 6px; }
+.refresh-dot.syncing { background: var(--accent); animation: pulse .8s ease infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="logo">📅 Calendrier Partagé</span>
+  <div style="display:flex;align-items:center;gap:8px;">
+    <span id="refreshDot" class="refresh-dot" title="Synchronisé"></span>
+    <button class="btn btn-primary" onclick="copyLink()">🔗 Copier le lien</button>
+  </div>
+</header>
+
+<div class="main">
+  <section class="calendar-section">
+    <div class="calendar-card">
+      <div class="calendar-nav">
+        <button class="nav-btn" onclick="changeMonth(-1)">‹</button>
+        <h2 id="monthTitle"></h2>
+        <button class="nav-btn" onclick="changeMonth(1)">›</button>
+      </div>
+      <div class="day-headers" id="dayHeaders"></div>
+      <div class="calendar-grid" id="calendarGrid"></div>
+    </div>
+    <div class="legend">
+      <span class="legend-item">
+        <span class="legend-dot" style="background:#6366f1"></span> Occupé
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot free" style="border-color:#6366f1"></span> Disponible
+      </span>
+      <span class="legend-item" style="font-size:.75rem;">Cliquez un jour pour marquer</span>
+    </div>
+  </section>
+
+  <aside class="sidebar">
+    <div class="card">
+      <div class="card-title">Mon profil</div>
+      <div class="form-group">
+        <label for="nameInput">Prénom</label>
+        <input id="nameInput" type="text" placeholder="Votre prénom" oninput="onNameChange()">
+      </div>
+      <div class="form-group">
+        <label>Couleur</label>
+        <div class="color-grid" id="colorGrid"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Participants</div>
+      <div id="participantsList">
+        <p class="no-participants">Aucun participant pour l'instant.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Jours communs</div>
+      <p class="hint">Jours où tout le monde est disponible</p>
+      <button class="common-days-btn" id="commonDaysBtn" onclick="toggleCommonDays()">
+        ✨ Afficher les jours communs
+      </button>
+    </div>
+  </aside>
+</div>
+
+<!-- Popup jour -->
+<div id="dayPopup" class="day-popup" style="display:none;">
+  <div id="popupTitle" class="popup-title"></div>
+  <button class="popup-btn" onclick="markDay('busy')">🔴 Occupé</button>
+  <button class="popup-btn" onclick="markDay('free')">🟢 Disponible</button>
+  <button class="popup-btn danger" onclick="markDay('clear')">✕ Effacer mon marquage</button>
+</div>
+
+<!-- Bandeau d'erreur -->
+<div id="errorBanner" class="error-banner" style="display:none;">
+  ⚠️ <span id="errorMsg"></span>
+  <button class="error-close" onclick="hideError()">✕</button>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast" style="display:none;"></div>
+
+<!-- Overlay de chargement -->
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="spinner"></div>
+  <p>Chargement du calendrier…</p>
+</div>
+
+<script>
+// CONSTANTS
+// STATE
+// API
+// URL
+// CALENDAR
+// PARTICIPANTS
+// COMMON DAYS
+// SYNC
+// MARKING
+// PROFILE
+// POLLING
+// TOAST / ERROR
+// INIT
+</script>
+</body>
+</html>
