@@ -162,7 +162,7 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
       <div class="card-title">Mon profil</div>
       <div class="form-group">
         <label for="nameInput">Prénom</label>
-        <input id="nameInput" type="text" placeholder="Votre prénom" oninput="onNameChange()">
+        <input id="nameInput" type="text" placeholder="Votre prénom" maxlength="40" oninput="onNameChange()">
       </div>
       <div class="form-group">
         <label>Couleur</label>
@@ -198,6 +198,7 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
 <!-- Bandeau d'erreur -->
 <div id="errorBanner" class="error-banner" style="display:none;">
   <span aria-hidden="true">⚠️</span> <span id="errorMsg"></span>
+  <button id="errorAction" class="btn btn-secondary" style="display:none;font-size:0.8rem;padding:5px 10px;margin-left:8px;"></button>
   <button class="error-close" onclick="hideError()">✕</button>
 </div>
 
@@ -637,6 +638,7 @@ function selectColor(color) {
     renderColorGrid();
     renderCalendar();
     renderParticipants();
+    syncAndSave();
 }
 
 // ========== POLLING ==========
@@ -670,13 +672,22 @@ function showToast(msg) {
     toastTimeout = setTimeout(() => { toast.style.display = 'none'; }, 3000);
 }
 
-function showError(msg) {
+function showError(msg, actionLabel, actionFn) {
     document.getElementById('errorMsg').textContent = msg;
+    const actionBtn = document.getElementById('errorAction');
+    if (actionLabel && actionFn) {
+        actionBtn.textContent = actionLabel;
+        actionBtn.onclick = actionFn;
+        actionBtn.style.display = 'inline-block';
+    } else {
+        actionBtn.style.display = 'none';
+    }
     document.getElementById('errorBanner').style.display = 'flex';
 }
 
 function hideError() {
     document.getElementById('errorBanner').style.display = 'none';
+    document.getElementById('errorAction').style.display = 'none';
 }
 
 async function copyLink() {
@@ -714,10 +725,29 @@ async function initBlob() {
             saveBlobId(blobId);
         } catch (e) {
             if (e.message === 'BLOB_NOT_FOUND') {
-                showError('Calendrier introuvable. Un nouveau calendrier a été créé.');
-                const newId = await apiCreateBlob({ users: [], markings: {} });
-                saveBlobId(newId);
-                sharedState = { users: [], markings: {} };
+                showError(
+                    'Calendrier introuvable (lien expiré ou invalide).',
+                    'Créer un nouveau calendrier',
+                    async () => {
+                        hideError();
+                        showLoading(true);
+                        try {
+                            const newId = await apiCreateBlob({ users: [], markings: {} });
+                            saveBlobId(newId);
+                            sharedState = { users: [], markings: {} };
+                            renderCalendar();
+                            renderProfile();
+                            renderParticipants();
+                            startPolling();
+                        } catch (err) {
+                            showError('Impossible de créer le calendrier. Vérifiez votre connexion.');
+                            console.error(err);
+                        } finally {
+                            showLoading(false);
+                        }
+                    }
+                );
+                throw new Error('BLOB_NOT_FOUND_HANDLED');
             } else {
                 throw e;
             }
@@ -735,8 +765,12 @@ async function init() {
         renderParticipants();
         startPolling();
     } catch (e) {
-        showError('Impossible de joindre le serveur. Vérifiez votre connexion.');
-        console.error(e);
+        if (e.message === 'BLOB_NOT_FOUND_HANDLED') {
+            // error banner already shown with action button, do nothing
+        } else {
+            showError('Impossible de joindre le serveur. Vérifiez votre connexion.');
+            console.error(e);
+        }
     } finally {
         showLoading(false);
     }
