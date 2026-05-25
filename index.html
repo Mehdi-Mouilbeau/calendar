@@ -274,7 +274,7 @@ function formatDate(year, month1, day) {
 }
 
 function escHtml(str) {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ========== API ==========
@@ -287,6 +287,7 @@ async function apiCreateBlob(data) {
     });
     if (!res.ok) throw new Error(`Création blob échouée : ${res.status}`);
     const location = res.headers.get('Location');
+    if (!location) throw new Error('Blob créé mais Location header absent');
     return location.split('/').pop();
 }
 
@@ -359,9 +360,10 @@ function renderCalendar() {
         const dots = dayMarkings.map(m => {
             const user = sharedState.users.find(u => u.id === m.userId);
             if (!user) return '';
+            const safeColor = PRESET_COLORS.includes(user.color) ? user.color : PRESET_COLORS[0];
             const isFree = m.status === 'free';
             return `<div class="dot ${m.status}"
-                        style="background:${isFree ? 'transparent' : user.color};border-color:${user.color};"
+                        style="background:${isFree ? 'transparent' : safeColor};border-color:${safeColor};"
                         title="${escHtml(user.name || 'Anonyme')} : ${isFree ? 'Disponible' : 'Occupé'}">
                     </div>`;
         }).join('');
@@ -402,7 +404,7 @@ function renderParticipants() {
             n + (entries.some(e => e.userId === user.id) ? 1 : 0), 0);
         return `
             <div class="participant${isMe ? ' me' : ''}">
-                <div class="participant-color" style="background:${user.color}"></div>
+                <div class="participant-color" style="background:${PRESET_COLORS.includes(user.color) ? user.color : PRESET_COLORS[0]}"></div>
                 <span class="participant-name">${escHtml(user.name || 'Anonyme')}${isMe ? ' <span style="color:var(--muted);font-weight:400">(moi)</span>' : ''}</span>
                 <span class="participant-count">${count} j.</span>
             </div>
@@ -435,10 +437,14 @@ function toggleCommonDays() {
 }
 
 // ========== SYNC ==========
+let isSaving = false;
+let hasPendingSave = false;
 
 async function syncAndSave() {
+    if (isSaving) return;
+    isSaving = true;
     const blobId = getBlobId();
-    if (!blobId) return;
+    if (!blobId) { isSaving = false; return; }
 
     setSyncing(true);
     try {
@@ -462,15 +468,18 @@ async function syncAndSave() {
 
         const merged = { users: mergedUsers, markings: mergedMarkings };
         await apiPutBlob(blobId, merged);
+        hasPendingSave = false;
         sharedState = merged;
         renderCalendar();
         renderParticipants();
 
     } catch (e) {
+        hasPendingSave = true;
         showError('Synchronisation échouée. Réessai au prochain rafraîchissement.');
         console.error('syncAndSave error:', e);
     } finally {
         setSyncing(false);
+        isSaving = false;
     }
 }
 
@@ -501,6 +510,7 @@ async function refreshFromServer() {
         renderCalendar();
         renderParticipants();
         hideError();
+        if (hasPendingSave) await syncAndSave();
 
     } catch (e) {
         console.warn('Refresh échoué :', e.message);
@@ -594,6 +604,7 @@ function upsertCurrentUser() {
 }
 
 // ========== PROFILE ==========
+let nameChangeTimer = null;
 
 function renderProfile() {
     document.getElementById('nameInput').value = currentUser.name;
@@ -615,6 +626,8 @@ function onNameChange() {
     saveCurrentUser();
     upsertCurrentUser();
     renderParticipants();
+    clearTimeout(nameChangeTimer);
+    nameChangeTimer = setTimeout(syncAndSave, 1500);
 }
 
 function selectColor(color) {
@@ -639,6 +652,11 @@ function stopPolling() {
     clearInterval(pollingInterval);
     pollingInterval = null;
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopPolling();
+    else { startPolling(); refreshFromServer(); }
+});
 
 // ========== TOAST / ERROR ==========
 
