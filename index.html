@@ -361,6 +361,7 @@ function renderCalendar() {
         const dots = dayMarkings.map(m => {
             const user = sharedState.users.find(u => u.id === m.userId);
             if (!user) return '';
+            if (!['busy', 'free'].includes(m.status)) return '';
             const safeColor = PRESET_COLORS.includes(user.color) ? user.color : PRESET_COLORS[0];
             const isFree = m.status === 'free';
             return `<div class="dot ${m.status}"
@@ -442,7 +443,7 @@ let isSaving = false;
 let hasPendingSave = false;
 
 async function syncAndSave() {
-    if (isSaving) return;
+    if (isSaving) { hasPendingSave = true; return; }
     isSaving = true;
     const blobId = getBlobId();
     if (!blobId) { isSaving = false; return; }
@@ -691,6 +692,10 @@ function hideError() {
 }
 
 async function copyLink() {
+    if (!getBlobId()) {
+        showToast('Calendrier non disponible — réessayez dans un instant.');
+        return;
+    }
     const url = window.location.href;
     try {
         await navigator.clipboard.writeText(url);
