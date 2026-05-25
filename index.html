@@ -761,12 +761,14 @@ async function initBlob() {
 }
 
 async function init() {
+    loadCurrentUser();
+    renderCalendar();
+    renderProfile();
+    renderParticipants();
     try {
         showLoading(true);
-        loadCurrentUser();
         await initBlob();
         renderCalendar();
-        renderProfile();
         renderParticipants();
         startPolling();
     } catch (e) {
