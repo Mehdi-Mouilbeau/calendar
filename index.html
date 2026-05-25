@@ -211,19 +211,520 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
 </div>
 
 <script>
-// CONSTANTS
-// STATE
-// API
-// URL
-// CALENDAR
-// PARTICIPANTS
-// COMMON DAYS
-// SYNC
-// MARKING
-// PROFILE
-// POLLING
-// TOAST / ERROR
-// INIT
+// ========== CONSTANTS ==========
+const JSONBLOB_BASE = 'https://jsonblob.com/api/jsonBlob';
+
+const LS = {
+    userId:    'cal_user_id',
+    userName:  'cal_user_name',
+    userColor: 'cal_user_color',
+    blobId:    'cal_blob_id'
+};
+
+const PRESET_COLORS = [
+    '#ef4444','#f97316','#eab308','#22c55e',
+    '#06b6d4','#6366f1','#a855f7','#ec4899',
+    '#14b8a6','#84cc16','#3b82f6','#f43f5e'
+];
+
+const MONTH_NAMES = [
+    'Janvier','Février','Mars','Avril','Mai','Juin',
+    'Juillet','Août','Septembre','Octobre','Novembre','Décembre'
+];
+
+const DAY_HEADERS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+
+// ========== STATE ==========
+
+let sharedState = { users: [], markings: {} };
+
+let currentUser = { id: null, name: '', color: PRESET_COLORS[0] };
+
+let viewMonth = new Date().getMonth();
+let viewYear  = new Date().getFullYear();
+
+let popupDate = null;
+let showCommonDays = false;
+
+function generateId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function loadCurrentUser() {
+    const id = localStorage.getItem(LS.userId);
+    if (id) {
+        currentUser.id    = id;
+        currentUser.name  = localStorage.getItem(LS.userName) || '';
+        currentUser.color = localStorage.getItem(LS.userColor) || PRESET_COLORS[0];
+    } else {
+        currentUser.id = generateId();
+        saveCurrentUser();
+    }
+}
+
+function saveCurrentUser() {
+    localStorage.setItem(LS.userId,    currentUser.id);
+    localStorage.setItem(LS.userName,  currentUser.name);
+    localStorage.setItem(LS.userColor, currentUser.color);
+}
+
+function formatDate(year, month1, day) {
+    return `${year}-${String(month1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+}
+
+function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ========== API ==========
+
+async function apiCreateBlob(data) {
+    const res = await fetch(JSONBLOB_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`Création blob échouée : ${res.status}`);
+    const location = res.headers.get('Location');
+    return location.split('/').pop();
+}
+
+async function apiGetBlob(blobId) {
+    const res = await fetch(`${JSONBLOB_BASE}/${blobId}`);
+    if (res.status === 404) throw new Error('BLOB_NOT_FOUND');
+    if (!res.ok) throw new Error(`Lecture blob échouée : ${res.status}`);
+    return res.json();
+}
+
+async function apiPutBlob(blobId, data) {
+    const res = await fetch(`${JSONBLOB_BASE}/${blobId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`Écriture blob échouée : ${res.status}`);
+}
+
+// ========== URL ==========
+
+function getBlobIdFromUrl() {
+    return new URLSearchParams(window.location.search).get('cal');
+}
+
+function setBlobIdInUrl(blobId) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('cal', blobId);
+    window.history.replaceState({}, '', url.toString());
+}
+
+function getBlobId() {
+    return getBlobIdFromUrl() || localStorage.getItem(LS.blobId);
+}
+
+function saveBlobId(blobId) {
+    localStorage.setItem(LS.blobId, blobId);
+    setBlobIdInUrl(blobId);
+}
+
+// ========== CALENDAR ==========
+
+function renderCalendar() {
+    document.getElementById('monthTitle').textContent =
+        `${MONTH_NAMES[viewMonth]} ${viewYear}`;
+
+    document.getElementById('dayHeaders').innerHTML =
+        DAY_HEADERS.map(d => `<div class="day-header">${d}</div>`).join('');
+
+    const firstDow    = new Date(viewYear, viewMonth, 1).getDay();
+    const startOffset = (firstDow + 6) % 7;
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const todayStr    = formatDate(
+        new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate()
+    );
+
+    const cells = [];
+
+    for (let i = 0; i < startOffset; i++) {
+        cells.push('<div class="day-cell empty"></div>');
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr  = formatDate(viewYear, viewMonth + 1, day);
+        const isToday  = dateStr === todayStr;
+        const isPast   = dateStr < todayStr;
+        const isCommon = showCommonDays && isCommonFreeDay(dateStr);
+
+        const dayMarkings = sharedState.markings[dateStr] || [];
+        const dots = dayMarkings.map(m => {
+            const user = sharedState.users.find(u => u.id === m.userId);
+            if (!user) return '';
+            const isFree = m.status === 'free';
+            return `<div class="dot ${m.status}"
+                        style="background:${isFree ? 'transparent' : user.color};border-color:${user.color};"
+                        title="${escHtml(user.name || 'Anonyme')} : ${isFree ? 'Disponible' : 'Occupé'}">
+                    </div>`;
+        }).join('');
+
+        cells.push(`
+            <div class="day-cell${isToday ? ' today' : ''}${isPast ? ' past' : ''}${isCommon ? ' common-free' : ''}"
+                 onclick="openDayPopup(event,'${dateStr}')">
+                <div class="day-number">${day}</div>
+                <div class="dots-row">${dots}</div>
+            </div>
+        `);
+    }
+
+    document.getElementById('calendarGrid').innerHTML = cells.join('');
+}
+
+function changeMonth(delta) {
+    viewMonth += delta;
+    if (viewMonth < 0)  { viewMonth = 11; viewYear--; }
+    if (viewMonth > 11) { viewMonth = 0;  viewYear++; }
+    renderCalendar();
+}
+
+// ========== PARTICIPANTS ==========
+
+function renderParticipants() {
+    const container = document.getElementById('participantsList');
+    const users = sharedState.users;
+
+    if (users.length === 0) {
+        container.innerHTML = '<p class="no-participants">Aucun participant pour l\'instant.</p>';
+        return;
+    }
+
+    container.innerHTML = users.map(user => {
+        const isMe  = user.id === currentUser.id;
+        const count = Object.values(sharedState.markings).reduce((n, entries) =>
+            n + (entries.some(e => e.userId === user.id) ? 1 : 0), 0);
+        return `
+            <div class="participant${isMe ? ' me' : ''}">
+                <div class="participant-color" style="background:${user.color}"></div>
+                <span class="participant-name">${escHtml(user.name || 'Anonyme')}${isMe ? ' <span style="color:var(--muted);font-weight:400">(moi)</span>' : ''}</span>
+                <span class="participant-count">${count} j.</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// ========== COMMON DAYS ==========
+
+function isCommonFreeDay(dateStr) {
+    const users = sharedState.users;
+    if (users.length < 2) return false;
+    const dayMarkings = sharedState.markings[dateStr] || [];
+    return users.every(user =>
+        dayMarkings.some(m => m.userId === user.id && m.status === 'free')
+    );
+}
+
+function toggleCommonDays() {
+    showCommonDays = !showCommonDays;
+    const btn = document.getElementById('commonDaysBtn');
+    if (showCommonDays) {
+        btn.classList.add('active');
+        btn.textContent = '✅ Masquer les jours communs';
+    } else {
+        btn.classList.remove('active');
+        btn.textContent = '✨ Afficher les jours communs';
+    }
+    renderCalendar();
+}
+
+// ========== SYNC ==========
+
+async function syncAndSave() {
+    const blobId = getBlobId();
+    if (!blobId) return;
+
+    setSyncing(true);
+    try {
+        const serverState = await apiGetBlob(blobId);
+
+        const otherUsers  = (serverState.users || []).filter(u => u.id !== currentUser.id);
+        const mergedUsers = [...otherUsers, { id: currentUser.id, name: currentUser.name, color: currentUser.color }];
+
+        const mergedMarkings = {};
+        for (const [date, entries] of Object.entries(serverState.markings || {})) {
+            const others = entries.filter(e => e.userId !== currentUser.id);
+            if (others.length > 0) mergedMarkings[date] = others;
+        }
+
+        for (const [date, entries] of Object.entries(sharedState.markings)) {
+            const mine = entries.filter(e => e.userId === currentUser.id);
+            if (mine.length > 0) {
+                mergedMarkings[date] = [...(mergedMarkings[date] || []), ...mine];
+            }
+        }
+
+        const merged = { users: mergedUsers, markings: mergedMarkings };
+        await apiPutBlob(blobId, merged);
+        sharedState = merged;
+        renderCalendar();
+        renderParticipants();
+
+    } catch (e) {
+        showError('Synchronisation échouée. Réessai au prochain rafraîchissement.');
+        console.error('syncAndSave error:', e);
+    } finally {
+        setSyncing(false);
+    }
+}
+
+async function refreshFromServer() {
+    const blobId = getBlobId();
+    if (!blobId) return;
+
+    setSyncing(true);
+    try {
+        const serverState = await apiGetBlob(blobId);
+
+        const myMarkings = {};
+        for (const [date, entries] of Object.entries(sharedState.markings)) {
+            const mine = entries.filter(e => e.userId === currentUser.id);
+            if (mine.length > 0) myMarkings[date] = mine;
+        }
+
+        const mergedMarkings = {};
+        for (const [date, entries] of Object.entries(serverState.markings || {})) {
+            const others = entries.filter(e => e.userId !== currentUser.id);
+            if (others.length > 0) mergedMarkings[date] = others;
+        }
+        for (const [date, mine] of Object.entries(myMarkings)) {
+            mergedMarkings[date] = [...(mergedMarkings[date] || []), ...mine];
+        }
+
+        sharedState = { users: serverState.users || [], markings: mergedMarkings };
+        renderCalendar();
+        renderParticipants();
+        hideError();
+
+    } catch (e) {
+        console.warn('Refresh échoué :', e.message);
+    } finally {
+        setSyncing(false);
+    }
+}
+
+function setSyncing(syncing) {
+    const dot = document.getElementById('refreshDot');
+    if (syncing) dot.classList.add('syncing');
+    else         dot.classList.remove('syncing');
+}
+
+// ========== MARKING ==========
+
+function openDayPopup(event, dateStr) {
+    event.stopPropagation();
+
+    if (!currentUser.name.trim()) {
+        showToast('Entrez d\'abord votre prénom dans "Mon profil" 👆');
+        document.getElementById('nameInput').focus();
+        return;
+    }
+
+    popupDate = dateStr;
+
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date      = new Date(y, m - 1, d);
+    const dayNames  = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+    document.getElementById('popupTitle').textContent =
+        `${dayNames[date.getDay()]} ${d} ${MONTH_NAMES[m-1].slice(0,3).toLowerCase()}.`;
+
+    const popup = document.getElementById('dayPopup');
+    popup.style.display = 'block';
+
+    const rect  = event.currentTarget.getBoundingClientRect();
+    const popupW = 155;
+    let top  = rect.bottom + 6;
+    let left = rect.left + rect.width / 2 - popupW / 2;
+
+    if (left + popupW > window.innerWidth - 8) left = window.innerWidth - popupW - 8;
+    if (left < 8) left = 8;
+    if (top + 130 > window.innerHeight) top = rect.top - 130;
+
+    popup.style.top  = `${top}px`;
+    popup.style.left = `${left}px`;
+}
+
+function closeDayPopup() {
+    document.getElementById('dayPopup').style.display = 'none';
+    popupDate = null;
+}
+
+document.addEventListener('click', e => {
+    const popup = document.getElementById('dayPopup');
+    if (popup.style.display !== 'none' && !popup.contains(e.target)) {
+        closeDayPopup();
+    }
+});
+
+async function markDay(status) {
+    if (!popupDate) return;
+    const dateStr = popupDate;
+    closeDayPopup();
+
+    if (!sharedState.markings[dateStr]) sharedState.markings[dateStr] = [];
+
+    sharedState.markings[dateStr] =
+        sharedState.markings[dateStr].filter(m => m.userId !== currentUser.id);
+
+    if (status !== 'clear') {
+        sharedState.markings[dateStr].push({ userId: currentUser.id, status });
+    }
+
+    if (sharedState.markings[dateStr].length === 0) {
+        delete sharedState.markings[dateStr];
+    }
+
+    upsertCurrentUser();
+    renderCalendar();
+    renderParticipants();
+    await syncAndSave();
+}
+
+function upsertCurrentUser() {
+    const idx       = sharedState.users.findIndex(u => u.id === currentUser.id);
+    const userEntry = { id: currentUser.id, name: currentUser.name, color: currentUser.color };
+    if (idx >= 0) sharedState.users[idx] = userEntry;
+    else          sharedState.users.push(userEntry);
+}
+
+// ========== PROFILE ==========
+
+function renderProfile() {
+    document.getElementById('nameInput').value = currentUser.name;
+    renderColorGrid();
+}
+
+function renderColorGrid() {
+    document.getElementById('colorGrid').innerHTML = PRESET_COLORS.map(color => `
+        <div class="color-swatch${currentUser.color === color ? ' selected' : ''}"
+             style="background:${color}"
+             onclick="selectColor('${color}')"
+             title="${color}">
+        </div>
+    `).join('');
+}
+
+function onNameChange() {
+    currentUser.name = document.getElementById('nameInput').value;
+    saveCurrentUser();
+    upsertCurrentUser();
+    renderParticipants();
+}
+
+function selectColor(color) {
+    currentUser.color = color;
+    saveCurrentUser();
+    upsertCurrentUser();
+    renderColorGrid();
+    renderCalendar();
+    renderParticipants();
+}
+
+// ========== POLLING ==========
+
+let pollingInterval = null;
+
+function startPolling() {
+    if (pollingInterval) return;
+    pollingInterval = setInterval(refreshFromServer, 30_000);
+}
+
+function stopPolling() {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+}
+
+// ========== TOAST / ERROR ==========
+
+let toastTimeout = null;
+
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.style.display = 'block';
+    clearTimeout(toastTimeout);
+    toastTimeout = setTimeout(() => { toast.style.display = 'none'; }, 3000);
+}
+
+function showError(msg) {
+    document.getElementById('errorMsg').textContent = msg;
+    document.getElementById('errorBanner').style.display = 'flex';
+}
+
+function hideError() {
+    document.getElementById('errorBanner').style.display = 'none';
+}
+
+async function copyLink() {
+    const url = window.location.href;
+    try {
+        await navigator.clipboard.writeText(url);
+    } catch {
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+    }
+    showToast('Lien copié ! Envoyez-le à vos amis 🎉');
+}
+
+// ========== INIT ==========
+
+function showLoading(show) {
+    document.getElementById('loadingOverlay').style.display = show ? 'flex' : 'none';
+}
+
+async function initBlob() {
+    let blobId = getBlobId();
+
+    if (!blobId) {
+        const initialState = { users: [], markings: {} };
+        blobId = await apiCreateBlob(initialState);
+        saveBlobId(blobId);
+        sharedState = initialState;
+    } else {
+        try {
+            sharedState = await apiGetBlob(blobId);
+            saveBlobId(blobId);
+        } catch (e) {
+            if (e.message === 'BLOB_NOT_FOUND') {
+                showError('Calendrier introuvable. Un nouveau calendrier a été créé.');
+                const newId = await apiCreateBlob({ users: [], markings: {} });
+                saveBlobId(newId);
+                sharedState = { users: [], markings: {} };
+            } else {
+                throw e;
+            }
+        }
+    }
+}
+
+async function init() {
+    try {
+        showLoading(true);
+        loadCurrentUser();
+        await initBlob();
+        renderCalendar();
+        renderProfile();
+        renderParticipants();
+        startPolling();
+    } catch (e) {
+        showError('Impossible de joindre le serveur. Vérifiez votre connexion.');
+        console.error(e);
+    } finally {
+        showLoading(false);
+    }
+}
+
+init();
 </script>
 </body>
 </html>
