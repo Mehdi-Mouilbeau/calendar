@@ -213,7 +213,7 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
 
 <script>
 // ========== CONSTANTS ==========
-const JSONBLOB_BASE = 'https://jsonblob.com/api/jsonBlob';
+const NPOINT_BASE = 'https://api.npoint.io';
 
 const LS = {
     userId:    'cal_user_id',
@@ -281,27 +281,27 @@ function escHtml(str) {
 // ========== API ==========
 
 async function apiCreateBlob(data) {
-    const res = await fetch(JSONBLOB_BASE, {
+    const res = await fetch(NPOINT_BASE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
     if (!res.ok) throw new Error(`Création blob échouée : ${res.status}`);
-    const location = res.headers.get('Location');
-    if (!location) throw new Error('Blob créé mais Location header absent');
-    return location.split('/').pop();
+    const json = await res.json();
+    if (!json.id) throw new Error('ID manquant dans la réponse');
+    return json.id;
 }
 
 async function apiGetBlob(blobId) {
-    const res = await fetch(`${JSONBLOB_BASE}/${blobId}`);
+    const res = await fetch(`${NPOINT_BASE}/${blobId}`);
     if (res.status === 404) throw new Error('BLOB_NOT_FOUND');
     if (!res.ok) throw new Error(`Lecture blob échouée : ${res.status}`);
     return res.json();
 }
 
 async function apiPutBlob(blobId, data) {
-    const res = await fetch(`${JSONBLOB_BASE}/${blobId}`, {
-        method: 'PUT',
+    const res = await fetch(`${NPOINT_BASE}/${blobId}`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     });
