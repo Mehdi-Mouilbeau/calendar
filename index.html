@@ -139,9 +139,9 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
   <section class="calendar-section">
     <div class="calendar-card">
       <div class="calendar-nav">
-        <button class="nav-btn" onclick="changeMonth(-1)">‹</button>
+        <button class="nav-btn" onclick="changeMonth(-1)" aria-label="Mois précédent">‹</button>
         <h2 id="monthTitle"></h2>
-        <button class="nav-btn" onclick="changeMonth(1)">›</button>
+        <button class="nav-btn" onclick="changeMonth(1)" aria-label="Mois suivant">›</button>
       </div>
       <div class="day-headers" id="dayHeaders"></div>
       <div class="calendar-grid" id="calendarGrid"></div>
@@ -188,7 +188,7 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
 </div>
 
 <!-- Popup jour -->
-<div id="dayPopup" class="day-popup" style="display:none;">
+<div id="dayPopup" class="day-popup" role="dialog" aria-modal="true" style="display:none;">
   <div id="popupTitle" class="popup-title"></div>
   <button class="popup-btn" onclick="markDay('busy')">🔴 Occupé</button>
   <button class="popup-btn" onclick="markDay('free')">🟢 Disponible</button>
@@ -197,7 +197,7 @@ header { background: var(--card); border-bottom: 1px solid var(--border); paddin
 
 <!-- Bandeau d'erreur -->
 <div id="errorBanner" class="error-banner" style="display:none;">
-  ⚠️ <span id="errorMsg"></span>
+  <span aria-hidden="true">⚠️</span> <span id="errorMsg"></span>
   <button class="error-close" onclick="hideError()">✕</button>
 </div>
 
